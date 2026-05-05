@@ -102,6 +102,8 @@ ros2 topic pub /butler_command std_msgs/String \
   "data: '{\"action\":\"goto\",\"waypoint\":\"kitchen\"}'"
 ```
 
+
+
 ### Supported actions
 
 | Action | Description |
@@ -150,7 +152,24 @@ The system includes a real-time web-based control dashboard for monitoring and m
 
 ### Dashboard Preview
 
-![UI Dashboard](media/screenshots/ui_dashboard.png)
+![UI Dashboard](media/screenshots/ui.png)
+
+### Prerequisites
+
+- ROS2 WebBridge (for connecting the UI to the ROS 2 system)
+
+### Running the UI
+
+The user interface is packaged as a Debian (.deb) file generated using Tauri. This provides a native desktop application for the web-based dashboard.
+
+1. Install the deb file:
+   ```bash
+   sudo dpkg -i butler-ui.deb
+   ```
+
+2. Launch the application from your desktop or run it via command line.
+
+Ensure ROS2 WebBridge is running in your ROS 2 environment to enable communication between the UI and the robot system.
 
 ---
 
