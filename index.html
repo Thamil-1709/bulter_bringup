@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BUTLER_OS // GOTHAM MISSION CONTROL</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+  <style>
+    :root { --bg: #0a0e14; --panel: rgba(16,23,30,0.98); --cyan: #00d2d3; --purple: #7d5fff; --red: #ff3e3e; --gold: #ffb400; }
+    * { box-sizing: border-box; }
+    body { background: var(--bg); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; min-height: 100vh; }
+    .dashboard { display: grid; grid-template-columns: 320px 1fr 240px; height: 100vh; }
+    .sidebar { background: var(--panel); border-right: 1px solid rgba(255,255,255,0.1); padding: 20px; display: flex; flex-direction: column; }
+    .main { padding: 25px; overflow-y: auto; }
+    .tracker { background: rgba(0,0,0,0.4); border-left: 1px solid rgba(255,255,255,0.1); padding: 20px; }
+    h2 { font-family: 'Orbitron', sans-serif; font-size: 0.7rem; color: var(--cyan); letter-spacing: 2px; margin-bottom: 20px; text-transform: uppercase; }
+    .btn { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid var(--purple); background: transparent; color: var(--purple); font-family: 'Orbitron'; font-size: 0.65rem; cursor: pointer; transition: 0.2s; }
+    .btn:hover:not(:disabled) { background: var(--purple); color: white; box-shadow: 0 0 10px var(--purple); }
+    .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .btn.red { border-color: var(--red); color: var(--red); }
+    .btn.red:hover { background: var(--red); color: white; }
+    .log-box { flex: 1; background: #000; font-family: monospace; font-size: 10px; padding: 10px; color: #00ff00; overflow-y: auto; border: 1px solid #222; }
+    .ros-status { font-size: 0.65rem; padding: 6px 10px; margin-bottom: 12px; border: 1px solid #333; text-align: center; }
+    .ros-status.connected { border-color: var(--cyan); color: var(--cyan); }
+    .ros-status.disconnected { border-color: var(--red); color: var(--red); }
+    .route { position: relative; padding-left: 35px; margin-top: 30px; }
+    .line { position: absolute; left: 15px; top: 0; bottom: 0; width: 2px; background: #222; }
+    .stop { position: relative; margin-bottom: 50px; font-size: 0.8rem; color: #555; }
+    .stop::before { content: ''; position: absolute; left: -26px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #222; border: 2px solid var(--bg); z-index: 2; }
+    .stop.active { color: var(--cyan); font-weight: bold; }
+    .stop.active::before { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+    .butler-bot { position: absolute; left: -30px; transition: all 0.6s cubic-bezier(0.4,0,0.2,1); font-size: 1.2rem; z-index: 3; }
+    .table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+    .table-card { border: 1px solid #333; padding: 15px; background: rgba(125,95,255,0.03); text-align: center; }
+    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-body { background: var(--bg); border: 1px solid var(--gold); padding: 30px; width: 340px; text-align: center; }
+    .q-item { display: flex; justify-content: space-between; align-items: center; padding: 5px; border-bottom: 1px solid #222; margin-bottom: 5px; }
+    .btn-mini { padding: 2px 5px; font-size: 0.5rem; border: 1px solid var(--red); color: var(--red); background: transparent; cursor: pointer; }
+    @media (max-width: 900px) { .dashboard { grid-template-columns: 1fr; height: auto; } }
+  </style>
+</head>
+<body>
+
+<div class="dashboard">
+  <aside class="sidebar">
+    <h2>COMMAND_CENTER</h2>
+    <div id="ros-indicator" class="ros-status disconnected">● ROS DISCONNECTED</div>
+    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:4px; margin-bottom:20px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+        <small>AUTO-TIMEOUT</small><input type="checkbox" id="timeout-toggle" checked>
+      </div>
+      <div style="display:flex; justify-content:space-between;">
+        <small>REQ-CONFIRM</small><input type="checkbox" id="confirm-toggle" checked>
+      </div>
+    </div>
+    <div id="q-list" style="margin-bottom:15px; font-size:0.75rem; min-height:80px; border:1px solid #222; padding:8px;"></div>
+    <button class="btn" id="pickup-btn" disabled onclick="kitchenConfirm()">CONFIRM PICKUP</button>
+    <button class="btn red" onclick="emergencyAbort()">EMERGENCY CANCEL</button>
+    <div class="log-box" id="log-console">>> Butler initialized.</div>
+  </aside>
+
+  <main class="main">
+    <h2>CAFE_OPERATIONS // TABLE_FLEET</h2>
+    <div class="table-grid">
+      <div class="table-card">
+        <small>TABLE_01</small>
+        <button class="btn" onclick="order('table1','TABLE_01','Espresso')">ORDER</button>
+        <button class="btn" style="border-style:dashed;font-size:0.5rem;opacity:0.5;" onclick="calibrate('table1')">CALIBRATE</button>
+      </div>
+      <div class="table-card">
+        <small>TABLE_02</small>
+        <button class="btn" onclick="order('table2','TABLE_02','Iced Tea')">ORDER</button>
+        <button class="btn" style="border-style:dashed;font-size:0.5rem;opacity:0.5;" onclick="calibrate('table2')">CALIBRATE</button>
+      </div>
+      <div class="table-card">
+        <small>TABLE_03</small>
+        <button class="btn" onclick="order('table3','TABLE_03','Croissant')">ORDER</button>
+        <button class="btn" style="border-style:dashed;font-size:0.5rem;opacity:0.5;" onclick="calibrate('table3')">CALIBRATE</button>
+      </div>
+      <div class="table-card">
+        <small>TABLE_04</small>
+        <button class="btn" onclick="order('table4','TABLE_04','Latte')">ORDER</button>
+        <button class="btn" style="border-style:dashed;font-size:0.5rem;opacity:0.5;" onclick="calibrate('table4')">CALIBRATE</button>
+      </div>
+    </div>
+  </main>
+
+  <aside class="tracker">
+    <h2>MISSION_TRACKER</h2>
+    <div class="route">
+      <div class="line"></div>
+      <div id="bot-marker" class="butler-bot" style="top:0px;">🤖</div>
+      <div class="stop" id="stop-HOME">HOME BASE</div>
+      <div class="stop" id="stop-KITCHEN">KITCHEN</div>
+      <div class="stop" id="stop-TABLE">SERVICE TABLE</div>
+    </div>
+  </aside>
+</div>
+
+<div id="handshake-modal" class="modal">
+  <div class="modal-body">
+    <h3 style="color:var(--gold);margin-top:0;">ATTENDANCE REQ</h3>
+    <p id="m-text" style="font-size:0.85rem;">Butler has arrived. Handshake required for delivery.</p>
+    <div style="height:4px;background:#222;margin:20px 0;">
+      <div id="t-bar" style="height:100%;background:var(--red);width:100%;"></div>
+    </div>
+    <button class="btn" style="border-color:var(--cyan);color:var(--cyan);" onclick="handshake()">CONFIRM ARRIVAL</button>
+  </div>
+</div>
+
+<script>
+const ros = new ROSLIB.Ros({ url: 'ws://localhost:9090' });
+ros.on('connection', () => { setRosStatus(true); log('ROS connected.'); });
+ros.on('error', () => { setRosStatus(false); });
+ros.on('close', () => { setRosStatus(false); });
+
+function setRosStatus(ok) {
+  const el = document.getElementById('ros-indicator');
+  el.textContent = ok ? '● ROS CONNECTED' : '● ROS DISCONNECTED';
+  el.className = 'ros-status ' + (ok ? 'connected' : 'disconnected');
+}
+
+const cmdPub = new ROSLIB.Topic({ ros, name: '/butler_command', messageType: 'std_msgs/String' });
+new ROSLIB.Topic({ ros, name: '/butler_status', messageType: 'std_msgs/String' }).subscribe(msg => onStatus(msg.data));
+
+function sendCommand(payload) { cmdPub.publish(new ROSLIB.Message({ data: JSON.stringify(payload) })); }
+
+let missions = [];
+let robotState = 'HOME';
+let awaitingArrival = null;
+let timerObj = null;
+let returnToKitchenNeeded = false; // For scenarios 3b, 4, 6, 7
+
+function onStatus(status) {
+  log(`[NODE] ${status}`);
+  if (status === 'KITCHEN') updateVisuals('KITCHEN');
+  if (status === 'TABLE') updateVisuals('TABLE');
+  if (status === 'HOME') updateVisuals('HOME');
+
+  if (status === 'ARRIVED') {
+    if (awaitingArrival === 'kitchen') onKitchenArrived();
+    else if (awaitingArrival === 'kitchen_return') onKitchenReturn();
+    else if (awaitingArrival === 'home') onHomeArrived();
+    else if (awaitingArrival && awaitingArrival.startsWith('table')) onTableArrived();
+  }
+}
+
+function order(waypoint, label, item) {
+  missions.push({ waypoint, label, item });
+  log(`Order queued: ${item} → ${label}`);
+  refreshQ();
+  if (robotState === 'HOME') startNextMission();
+}
+
+function refreshQ() {
+  document.getElementById('q-list').innerHTML = missions.map((m, index) => 
+    `<div class="q-item"><span>${m.label}</span><button class="btn-mini" onclick="cancelOrder(${index})">X</button></div>`).join('');
+}
+
+function startNextMission() {
+  if (missions.length === 0) {
+    if (returnToKitchenNeeded) { goKitchenReturn(); } else { goHome(); }
+    return;
+  }
+  robotState = 'KITCHEN';
+  awaitingArrival = 'kitchen';
+  log('Going to kitchen...');
+  sendCommand({ action: 'goto', waypoint: 'kitchen' });
+}
+
+function onKitchenArrived() {
+  if (!document.getElementById('confirm-toggle').checked) { kitchenConfirm(); return; }
+  document.getElementById('pickup-btn').disabled = false;
+  if (document.getElementById('timeout-toggle').checked) startTimer('KITCHEN');
+}
+
+function kitchenConfirm() {
+  if (missions.length === 0) { goHome(); return; }
+  cleanupTimer();
+  document.getElementById('pickup-btn').disabled = true;
+  const target = missions[0];
+  log(`Delivering to ${target.label}...`);
+  robotState = 'TABLE';
+  awaitingArrival = target.waypoint;
+  sendCommand({ action: 'goto', waypoint: target.waypoint });
+}
+
+function onTableArrived() {
+  if (!document.getElementById('confirm-toggle').checked) { handshake(); return; }
+  document.getElementById('handshake-modal').style.display = 'flex';
+  if (document.getElementById('timeout-toggle').checked) startTimer('TABLE');
+}
+
+function handshake() {
+  cleanupTimer();
+  document.getElementById('handshake-modal').style.display = 'none';
+  log(`Served: ${missions[0].label}.`);
+  missions.shift(); refreshQ();
+  startNextMission();
+}
+
+function goHome() { 
+  robotState = 'HOME'; awaitingArrival = 'home'; returnToKitchenNeeded = false;
+  sendCommand({ action: 'goto', waypoint: 'home' }); 
+}
+
+function goKitchenReturn() {
+  log('Returning to kitchen...');
+  awaitingArrival = 'kitchen_return';
+  sendCommand({ action: 'goto', waypoint: 'kitchen' });
+}
+
+function onKitchenReturn() { log('Food offloaded.'); goHome(); }
+
+function onHomeArrived() { updateVisuals('HOME'); robotState = 'HOME'; awaitingArrival = null; log('At base.'); }
+
+function emergencyAbort() {
+  log('EMERGENCY CANCEL');
+  cleanupTimer();
+  document.getElementById('handshake-modal').style.display = 'none';
+  document.getElementById('pickup-btn').disabled = true;
+  if (robotState === 'TABLE') {
+    missions = []; refreshQ();
+    returnToKitchenNeeded = true;
+    goKitchenReturn();
+  } else {
+    missions = []; refreshQ();
+    goHome();
+  }
+}
+
+function cancelOrder(index) {
+  log(`Canceled: ${missions[index].label}`);
+  if (index === 0 && robotState === 'TABLE') {
+    returnToKitchenNeeded = true;
+    cleanupTimer();
+    document.getElementById('handshake-modal').style.display = 'none';
+    missions.shift(); refreshQ();
+    startNextMission();
+  } else {
+    missions.splice(index, 1);
+    refreshQ();
+  }
+}
+
+function startTimer(stage) {
+  cleanupTimer();
+  let w = 100;
+  timerObj = setInterval(() => {
+    w -= 5;
+    document.getElementById('t-bar').style.width = w + '%';
+    if (w <= 0) { cleanupTimer(); onTimeout(stage); }
+  }, 500);
+}
+
+function cleanupTimer() { if (timerObj) { clearInterval(timerObj); timerObj = null; } }
+
+function onTimeout(stage) {
+  document.getElementById('handshake-modal').style.display = 'none';
+  document.getElementById('pickup-btn').disabled = true;
+  log(`Timeout at ${stage}.`);
+  if (stage === 'TABLE') {
+    returnToKitchenNeeded = false;
+    missions.shift(); refreshQ();
+    startNextMission();
+  } else {
+    missions.shift(); refreshQ();
+    startNextMission();
+  }
+}
+
+function calibrate(waypoint) {
+  if (confirm(`Calibrate ${waypoint}?`)) { sendCommand({ action: 'calibrate', waypoint }); 
+  }
+}
+
+function updateVisuals(loc) {
+  document.querySelectorAll('.stop').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(`stop-${loc}`);
+  if (el) el.classList.add('active');
+  const pos = { HOME: 0, KITCHEN: 60, TABLE: 120 };
+  document.getElementById('bot-marker').style.top = (pos[loc] ?? 0) + 'px';
+}
+
+function log(m) {
+  const c = document.getElementById('log-console');
+  c.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${m}</div>`;
+  c.scrollTop = c.scrollHeight;
+
+}
+updateVisuals('HOME');
+</script>
+</body>
+</html>
